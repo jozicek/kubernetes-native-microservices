@@ -1,5 +1,6 @@
 package quarkus;
 
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -11,12 +12,15 @@ import org.junit.jupiter.api.TestMethodOrder;
 import java.math.BigDecimal;
 import java.util.List;
 
+import io.quarkus.test.h2.H2DatabaseTestResource;
+
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@QuarkusTestResource(H2DatabaseTestResource.class)
 class AccountResourceTest {
 
     @Test
@@ -25,27 +29,27 @@ class AccountResourceTest {
         Response result = given().when().get("/accounts")
                 .then()
                 .statusCode(200)
-                .body(containsString("George Baird"),
-                        containsString("Mary Taylor"),
-                        containsString("Diana Rig"))
+                .body(containsString("Debbie Hall"),
+                        containsString("David Tennant"),
+                        containsString("Alex Kingston"))
                 .extract().response();
 
         List<Account> accounts = result.jsonPath().getList("$");
         assertThat(accounts, not(empty()));
-        assertThat(accounts, hasSize(3));
+        assertThat(accounts, hasSize(8));
 
     }
 
     @Test
     @Order(2)
     void testGetAccount() {
-        Account account = given().when().get("accounts/{accountNumber}", 555555555)
+        Account account = given().when().get("accounts/{accountNumber}", "123456789")
                 .then().statusCode(200)
                 .extract().as(Account.class);
 
-        assertThat(account.getAccountNumber(), equalTo(555555555L));
-        assertThat(account.getCustomerName(), equalTo("Diana Rig"));
-        assertThat(account.getBalance(), equalTo(new BigDecimal("422.00")));
+        assertThat(account.getAccountNumber(), equalTo(123456789L));
+        assertThat(account.getCustomerName(), equalTo("Debbie Hall"));
+        assertThat(account.getBalance(), equalTo(new BigDecimal("550.78")));
         assertThat(account.getAccountStatus(), equalTo(AccountStatus.OPEN));
     }
 
@@ -67,17 +71,45 @@ class AccountResourceTest {
 
         Response result = given().when().get("/accounts")
                 .then().statusCode(200)
-                .body(containsString("George Baird"),
-                        containsString("Mary Taylor"),
-                        containsString("Diana Rig"),
+                .body(containsString("Debbie Hall"),
+                        containsString("David Tennant"),
+                        containsString("Alex Kingston"),
                         containsString("Sandy Holmes"))
                 .extract()
                 .response();
 
         List<Account> accounts = result.jsonPath().getList("$");
         assertThat(accounts, not(empty()));
-        assertThat(accounts, hasSize(4));
+        assertThat(accounts, hasSize(9));
+    }
 
+    @Test
+    @Order(7)
+    void testCloseAccount() {
+        given().when()
+                .delete("accounts/{accountNumber}","78790")
+                .then()
+                .statusCode(204);
+    }
+
+    @Test
+    @Order(5)
+    void testDeposit() {
+        Account account = given().when()
+                .put("accounts/{accountNumber}/deposit/{amount}", "78790", "100.30")
+                .then()
+                .extract().as(Account.class);
+        assertThat(account.balance, is(new BigDecimal("539.31")));
+    }
+
+    @Test
+    @Order(6)
+    void testWithdrawal() {
+        Account account = given().when()
+                .put("accounts/{accountNumber}/withdrawal/{amount}", "444666", "200.60")
+                .then()
+                .extract().as(Account.class);
+        assertThat(account.balance, is(new BigDecimal("3298.52")));
     }
 
 }

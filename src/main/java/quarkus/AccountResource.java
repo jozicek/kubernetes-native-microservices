@@ -1,8 +1,13 @@
 package quarkus;
 
 import javax.annotation.PostConstruct;
+import javax.inject.Inject;
 import javax.json.Json;
 import javax.json.JsonObjectBuilder;
+import javax.persistence.EntityManager;
+import javax.persistence.NoResultException;
+import javax.print.attribute.standard.Media;
+import javax.transaction.Transactional;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -10,37 +15,42 @@ import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.ext.ExceptionMapper;
 import java.math.BigDecimal;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Path("accounts")
 public class AccountResource {
 
-    Set<Account> accounts = new HashSet<>();
+    @Inject
+    EntityManager entityManager;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Set<Account> allAccounts() {
-        return accounts;
+    public List<Account> allAccounts() {
+        return entityManager.createNamedQuery("Accounts.findAll", Account.class).getResultList();
     }
 
     @Path("{accountNumber}")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Account getAccount(@PathParam("accountNumber") Long accountNumber) {
-        return accounts.stream().
-                filter(account -> account.getAccountNumber().equals(accountNumber)).
-                findFirst().orElseThrow(() -> new WebApplicationException("Account with id of " +
-                        accountNumber + " does not exist.", 404));
+        try {
+            return entityManager.createNamedQuery("Accounts.findByAccountNumber", Account.class).
+                    setParameter("accountNumber", accountNumber).getSingleResult();
+        } catch (NoResultException e) {
+            throw new WebApplicationException("Account with id of " +
+                    accountNumber + " does not exist.", 404);
+        }
     }
 
+    @Transactional
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-
     public Response createAccount(Account account) {
         if (account.getAccountNumber() == null) {
             throw new WebApplicationException("Account number not specified", 400);
         }
-        accounts.add(account);
+        entityManager.persist(account);
         return Response.created(UriBuilder.fromResource(AccountResource.class).
                         path(account.getAccountNumber().toString()).
                         build()).
@@ -48,39 +58,35 @@ public class AccountResource {
                 build();
     }
 
+    @Transactional
     @PUT
-    @Path("{accountNumber}/withdrawal")
-    public Account withdrawal(@PathParam("accountNumber") final Long accountNumber, final String amount) {
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("{accountNumber}/withdrawal/{amount}")
+    public Account withdrawal(@PathParam("accountNumber") final Long accountNumber,
+                              @PathParam("amount") final String amount) {
         Account account = getAccount(accountNumber);
         account.withdrawFunds(new BigDecimal(amount));
         return account;
     }
 
+    @Transactional
     @PUT
-    @Path("{accountNumber}/deposit")
-    public Account deposit(@PathParam("accountNumber") final Long accountNumber, final String amount) {
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("{accountNumber}/deposit/{amount}")
+    public Account deposit(@PathParam("accountNumber") final Long accountNumber,
+                           @PathParam("amount") final String amount) {
         Account account = getAccount(accountNumber);
         account.addFunds(new BigDecimal(amount));
         return account;
     }
 
+    @Transactional
     @DELETE
     @Path("{accountNumber}")
     public Response closeAccount(@PathParam("accountNumber") final Long accountNumber) {
         Account account = getAccount(accountNumber);
-        accounts.remove(account);
+        entityManager.remove(account);
         return Response.noContent().build();
-    }
-
-    @PostConstruct
-    public void setup() {
-        accounts.add(new Account(123456789L, 987654321L,
-                "George Baird", new BigDecimal("354.23")));
-        accounts.add(new Account(111111111L, 2222222222L,
-                "Mary Taylor", new BigDecimal("560.03")));
-        accounts.add(new Account(555555555L, 4444444444L,
-                "Diana Rig", new BigDecimal("422.00")));
-
     }
 
     public static class ErrorMapper implements ExceptionMapper<Exception> {
